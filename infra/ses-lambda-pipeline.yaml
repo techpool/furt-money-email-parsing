@@ -122,7 +122,7 @@ Resources:
       FunctionName: !Ref ProcessEmailFunction
       Action: lambda:InvokeFunction
       Principal: ses.amazonaws.com
-      SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${RuleSetName}'
+      SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${RuleSetName}:receipt-rule/${AWS::StackName}-inbox-rule'
 
   EmailReceiptRuleSet:
     Type: AWS::SES::ReceiptRuleSet

@@ -26,11 +26,24 @@ if ! command -v aws >/dev/null 2>&1; then
   exit 1
 fi
 
+empty_inbound_bucket() {
+  local bucket_name
+  bucket_name=$(aws cloudformation list-stack-resources --stack-name "$STACK_NAME" \
+    --query "StackResourceSummaries[?LogicalResourceId=='InboundEmailBucket'].PhysicalResourceId" \
+    --output text 2>/dev/null || true)
+
+  if [[ -n "$bucket_name" && "$bucket_name" != "None" ]]; then
+    echo "Emptying S3 bucket s3://$bucket_name before stack deletion..." >&2
+    aws s3 rm "s3://$bucket_name" --recursive >/dev/null 2>&1 || true
+  fi
+}
+
 existing_status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
   --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
 
-if [[ "$existing_status" == "ROLLBACK_COMPLETE" ]]; then
-  echo "Stack $STACK_NAME is stuck in ROLLBACK_COMPLETE. Deleting before redeploy..." >&2
+if [[ "$existing_status" == "ROLLBACK_COMPLETE" || "$existing_status" == "ROLLBACK_FAILED" || "$existing_status" == "DELETE_FAILED" ]]; then
+  echo "Stack $STACK_NAME is stuck in status $existing_status. Cleaning up before redeploy..." >&2
+  empty_inbound_bucket
   aws cloudformation delete-stack --stack-name "$STACK_NAME"
   aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
 fi
