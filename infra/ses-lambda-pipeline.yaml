@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SES-driven Node.js 22 Lambda pipeline for inbox.furt.money
+
+Parameters:
+  RuleSetName:
+    Type: String
+    Default: inbox-furt-money-rule-set
+    AllowedPattern: '[-a-zA-Z0-9]+'
+    Description: Name of the SES receipt rule set to create or update.
+  RecipientDomain:
+    Type: String
+    Default: inbox.furt.money
+    Description: Domain that should receive inbound mail (e.g., inbox.furt.money).
+
+Resources:
+  InboundEmailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireEmailsAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Filter: {}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  InboundEmailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref InboundEmailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSESPuts
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${InboundEmailBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                aws:Referer: !Ref AWS::AccountId
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaReadInboundEmails
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt InboundEmailBucket.Arn
+                  - !Sub '${InboundEmailBucket.Arn}/*'
+
+  ProcessEmailFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs22.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          EMAIL_BUCKET: !Ref InboundEmailBucket
+          EMAIL_PREFIX: raw/
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3();
+
+          exports.handler = async (event) => {
+            const sesRecord = event.Records?.[0]?.ses;
+            if (!sesRecord) {
+              console.log('No SES record found', JSON.stringify(event));
+              return;
+            }
+
+            const messageId = sesRecord.mail.messageId;
+            const bucket = process.env.EMAIL_BUCKET;
+            const prefix = process.env.EMAIL_PREFIX || '';
+            const key = `${prefix}${messageId}`;
+
+            try {
+              const object = await s3.getObject({ Bucket: bucket, Key: key }).promise();
+              console.log(`Processed message ${messageId}, size=${object.ContentLength}`);
+              // TODO: add parsing logic here.
+            } catch (err) {
+              console.error(`Failed to read message ${messageId}`, err);
+              throw err;
+            }
+          };
+
+  LambdaInvokePermissionForSES:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProcessEmailFunction
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${RuleSetName}'
+
+  EmailReceiptRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Ref RuleSetName
+
+  EmailReceiptRule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn:
+      - EmailReceiptRuleSet
+      - LambdaInvokePermissionForSES
+      - InboundEmailBucketPolicy
+    Properties:
+      RuleSetName: !Ref RuleSetName
+      Rule:
+        Name: !Sub '${AWS::StackName}-inbox-rule'
+        Enabled: true
+        TlsPolicy: Optional
+        ScanEnabled: true
+        Recipients:
+          - !Ref RecipientDomain
+        Actions:
+          - S3Action:
+              BucketName: !Ref InboundEmailBucket
+              ObjectKeyPrefix: raw/
+          - LambdaAction:
+              FunctionArn: !GetAtt ProcessEmailFunction.Arn
+              InvocationType: Event
+
+Outputs:
+  InboundEmailBucketName:
+    Description: S3 bucket storing inbound SES mail.
+    Value: !Ref InboundEmailBucket
+  ProcessEmailLambdaName:
+    Description: Node.js 22 Lambda that processes inbound messages.
+    Value: !Ref ProcessEmailFunction
+  ReceiptRuleSetName:
+    Description: SES receipt rule set handling *@inbox.furt.money mail.
+    Value: !Ref RuleSetName
