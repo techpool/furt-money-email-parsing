@@ -26,6 +26,15 @@ if ! command -v aws >/dev/null 2>&1; then
   exit 1
 fi
 
+existing_status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+
+if [[ "$existing_status" == "ROLLBACK_COMPLETE" ]]; then
+  echo "Stack $STACK_NAME is stuck in ROLLBACK_COMPLETE. Deleting before redeploy..." >&2
+  aws cloudformation delete-stack --stack-name "$STACK_NAME"
+  aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+fi
+
 cat <<INFO
 Deploying SES -> S3 -> Lambda pipeline
   Stack Name      : $STACK_NAME

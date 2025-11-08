@@ -25,7 +25,7 @@ Resources:
           - Id: ExpireEmailsAfter30Days
             Status: Enabled
             ExpirationInDays: 30
-            Filter: {}
+            Prefix: ''
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
