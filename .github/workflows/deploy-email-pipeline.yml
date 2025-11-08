@@ -19,12 +19,13 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Deploy CloudFormation stack
         env:
-          STACK_NAME: ${{ vars.STACK_NAME }}
-          RULE_SET_NAME: ${{ vars.RULE_SET_NAME }}
-          RECIPIENT_DOMAIN: ${{ vars.RECIPIENT_DOMAIN }}
+          STACK_NAME: ${{ vars.STACK_NAME || 'furt-money-email-ingestion' }}
+          RULE_SET_NAME: ${{ vars.RULE_SET_NAME || 'inbox-furt-money-rule-set' }}
+          RECIPIENT_DOMAIN: ${{ vars.RECIPIENT_DOMAIN || 'inbox.furt.money' }}
         run: ./scripts/deploy-email-pipeline.sh
