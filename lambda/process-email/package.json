@@ -1,0 +1,33 @@
+{
+  "name": "@furtmoney/process-email",
+  "version": "0.1.0",
+  "description": "Lambda handler that processes inbound SES emails from S3",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "clean": "rm -rf dist build",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && npm run typecheck && esbuild src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/index.js --log-level=info",
+    "package": "npm run build && mkdir -p build && (cd dist && zip -qr ../build/process-email.zip .)"
+  },
+  "keywords": [
+    "lambda",
+    "ses",
+    "email",
+    "furt-money"
+  ],
+  "author": "Furt Money",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.629.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.129",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  }
+}

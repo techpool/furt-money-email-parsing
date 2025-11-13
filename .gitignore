@@ -1,0 +1,18 @@
+# Node dependency directories
+node_modules
+**/node_modules
+
+# Build outputs and packaged Lambda artifacts
+build/
+**/build/
+dist/
+**/dist/
+*.zip
+*.tsbuildinfo
+
+# Environment/configuration overrides
+.env
+.env.*
+
+# OS / editor cruft
+.DS_Store

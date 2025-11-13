@@ -15,6 +15,12 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional Route 53 hosted zone ID for RecipientDomain. Leave blank to manage DNS manually.
+  LambdaCodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing the packaged Lambda artifact.
+  LambdaCodeS3Key:
+    Type: String
+    Description: S3 key of the packaged Lambda artifact.
 
 Conditions:
   HasHostedZoneId: !Not [!Equals [!Ref HostedZoneId, '']]
@@ -97,31 +103,8 @@ Resources:
           EMAIL_BUCKET: !Ref InboundEmailBucket
           EMAIL_PREFIX: raw/
       Code:
-        ZipFile: |
-          const AWS = require('aws-sdk');
-          const s3 = new AWS.S3();
-
-          exports.handler = async (event) => {
-            const sesRecord = event.Records?.[0]?.ses;
-            if (!sesRecord) {
-              console.log('No SES record found', JSON.stringify(event));
-              return;
-            }
-
-            const messageId = sesRecord.mail.messageId;
-            const bucket = process.env.EMAIL_BUCKET;
-            const prefix = process.env.EMAIL_PREFIX || '';
-            const key = `${prefix}${messageId}`;
-
-            try {
-              const object = await s3.getObject({ Bucket: bucket, Key: key }).promise();
-              console.log(`Processed message ${messageId}, size=${object.ContentLength}`);
-              // TODO: add parsing logic here.
-            } catch (err) {
-              console.error(`Failed to read message ${messageId}`, err);
-              throw err;
-            }
-          };
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
 
   LambdaInvokePermissionForSES:
     Type: AWS::Lambda::Permission

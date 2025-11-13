@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+
 STACK_NAME=${STACK_NAME:-furt-money-email-ingestion}
 RULE_SET_NAME=${RULE_SET_NAME:-inbox-furt-money-rule-set}
 RECIPIENT_DOMAIN=${RECIPIENT_DOMAIN:-inbox.furt.money}
-TEMPLATE_PATH=${TEMPLATE_PATH:-infra/ses-lambda-pipeline.yaml}
+TEMPLATE_PATH=${TEMPLATE_PATH:-$PROJECT_ROOT/infra/ses-lambda-pipeline.yaml}
 HOSTED_ZONE_ID=${HOSTED_ZONE_ID:-}
+LAMBDA_SOURCE_DIR=${LAMBDA_SOURCE_DIR:-$PROJECT_ROOT/lambda/process-email}
+LAMBDA_PACKAGE_NAME=${LAMBDA_PACKAGE_NAME:-process-email.zip}
+LAMBDA_PACKAGE_PATH=${LAMBDA_PACKAGE_PATH:-$LAMBDA_SOURCE_DIR/build/$LAMBDA_PACKAGE_NAME}
+ARTIFACT_BUCKET=${ARTIFACT_BUCKET:-}
+LAMBDA_ARTIFACT_KEY=${LAMBDA_ARTIFACT_KEY:-lambda/process-email/$STACK_NAME-$(date +%Y%m%d%H%M%S).zip}
+SKIP_LAMBDA_NPM_INSTALL=${SKIP_LAMBDA_NPM_INSTALL:-false}
 
 on_error() {
   status=$?
@@ -26,6 +35,29 @@ if ! command -v aws >/dev/null 2>&1; then
   echo "aws CLI is required on the runner" >&2
   exit 1
 fi
+
+if [[ -z "$ARTIFACT_BUCKET" ]]; then
+  echo "ARTIFACT_BUCKET environment variable must be set to an S3 bucket for Lambda artifacts" >&2
+  exit 1
+fi
+
+lower_skip_install=${SKIP_LAMBDA_NPM_INSTALL,,}
+
+echo "Building Lambda package from $LAMBDA_SOURCE_DIR" >&2
+pushd "$LAMBDA_SOURCE_DIR" >/dev/null
+if [[ "$lower_skip_install" != "true" ]]; then
+  npm install
+fi
+npm run package
+popd >/dev/null
+
+if [[ ! -f "$LAMBDA_PACKAGE_PATH" ]]; then
+  echo "Expected Lambda package at $LAMBDA_PACKAGE_PATH but it was not found" >&2
+  exit 1
+fi
+
+echo "Uploading Lambda artifact to s3://$ARTIFACT_BUCKET/$LAMBDA_ARTIFACT_KEY" >&2
+aws s3 cp "$LAMBDA_PACKAGE_PATH" "s3://$ARTIFACT_BUCKET/$LAMBDA_ARTIFACT_KEY"
 
 empty_inbound_bucket() {
   local bucket_name
@@ -56,6 +88,8 @@ Deploying SES -> S3 -> Lambda pipeline
   Rule Set Name   : $RULE_SET_NAME
   Recipient Domain: $RECIPIENT_DOMAIN
   Hosted Zone ID  : ${HOSTED_ZONE_ID:-<none>}
+  Artifact Bucket : $ARTIFACT_BUCKET
+  Artifact Key    : $LAMBDA_ARTIFACT_KEY
 INFO
 
 set -x
@@ -66,6 +100,8 @@ deploy_args=(
   --parameter-overrides
     RuleSetName="$RULE_SET_NAME"
     RecipientDomain="$RECIPIENT_DOMAIN"
+    LambdaCodeS3Bucket="$ARTIFACT_BUCKET"
+    LambdaCodeS3Key="$LAMBDA_ARTIFACT_KEY"
 )
 
 if [[ -n "$HOSTED_ZONE_ID" ]]; then
