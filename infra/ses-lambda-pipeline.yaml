@@ -11,6 +11,13 @@ Parameters:
     Type: String
     Default: inbox.furt.money
     Description: Domain that should receive inbound mail (e.g., inbox.furt.money).
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Optional Route 53 hosted zone ID for RecipientDomain. Leave blank to manage DNS manually.
+
+Conditions:
+  HasHostedZoneId: !Not [!Equals [!Ref HostedZoneId, '']]
 
 Resources:
   InboundEmailBucket:
@@ -152,6 +159,44 @@ Resources:
               FunctionArn: !GetAtt ProcessEmailFunction.Arn
               InvocationType: Event
 
+  InboundEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref RecipientDomain
+
+  DkimRecord1:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZoneId
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt InboundEmailIdentity.DkimDNSTokenName1
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt InboundEmailIdentity.DkimDNSTokenValue1
+
+  DkimRecord2:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZoneId
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt InboundEmailIdentity.DkimDNSTokenName2
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt InboundEmailIdentity.DkimDNSTokenValue2
+
+  DkimRecord3:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZoneId
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt InboundEmailIdentity.DkimDNSTokenName3
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt InboundEmailIdentity.DkimDNSTokenValue3
+
 Outputs:
   InboundEmailBucketName:
     Description: S3 bucket storing inbound SES mail.
@@ -162,3 +207,24 @@ Outputs:
   ReceiptRuleSetName:
     Description: SES receipt rule set handling *@inbox.furt.money mail.
     Value: !Ref RuleSetName
+  EmailIdentityArn:
+    Description: ARN of the SES email identity for the inbox domain.
+    Value: !GetAtt InboundEmailIdentity.Arn
+  DkimTokenName1:
+    Description: DKIM record name 1 (publish if Route 53 automation disabled).
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenName1
+  DkimTokenValue1:
+    Description: DKIM record value 1.
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenValue1
+  DkimTokenName2:
+    Description: DKIM record name 2 (publish if Route 53 automation disabled).
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenName2
+  DkimTokenValue2:
+    Description: DKIM record value 2.
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenValue2
+  DkimTokenName3:
+    Description: DKIM record name 3 (publish if Route 53 automation disabled).
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenName3
+  DkimTokenValue3:
+    Description: DKIM record value 3.
+    Value: !GetAtt InboundEmailIdentity.DkimDNSTokenValue3

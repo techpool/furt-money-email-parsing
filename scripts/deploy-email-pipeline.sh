@@ -5,6 +5,7 @@ STACK_NAME=${STACK_NAME:-furt-money-email-ingestion}
 RULE_SET_NAME=${RULE_SET_NAME:-inbox-furt-money-rule-set}
 RECIPIENT_DOMAIN=${RECIPIENT_DOMAIN:-inbox.furt.money}
 TEMPLATE_PATH=${TEMPLATE_PATH:-infra/ses-lambda-pipeline.yaml}
+HOSTED_ZONE_ID=${HOSTED_ZONE_ID:-}
 
 on_error() {
   status=$?
@@ -54,16 +55,24 @@ Deploying SES -> S3 -> Lambda pipeline
   Template Path   : $TEMPLATE_PATH
   Rule Set Name   : $RULE_SET_NAME
   Recipient Domain: $RECIPIENT_DOMAIN
+  Hosted Zone ID  : ${HOSTED_ZONE_ID:-<none>}
 INFO
 
 set -x
-aws cloudformation deploy \
-  --stack-name "$STACK_NAME" \
-  --template-file "$TEMPLATE_PATH" \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-      RuleSetName="$RULE_SET_NAME" \
-      RecipientDomain="$RECIPIENT_DOMAIN"
+deploy_args=(
+  --stack-name "$STACK_NAME"
+  --template-file "$TEMPLATE_PATH"
+  --capabilities CAPABILITY_NAMED_IAM
+  --parameter-overrides
+    RuleSetName="$RULE_SET_NAME"
+    RecipientDomain="$RECIPIENT_DOMAIN"
+)
+
+if [[ -n "$HOSTED_ZONE_ID" ]]; then
+  deploy_args+=(HostedZoneId="$HOSTED_ZONE_ID")
+fi
+
+aws cloudformation deploy "${deploy_args[@]}"
 set +x
 
 echo "Deployment finished." 
