@@ -207,9 +207,9 @@ Outputs:
   ReceiptRuleSetName:
     Description: SES receipt rule set handling *@inbox.furt.money mail.
     Value: !Ref RuleSetName
-  EmailIdentityArn:
-    Description: ARN of the SES email identity for the inbox domain.
-    Value: !GetAtt InboundEmailIdentity.Arn
+  EmailIdentityName:
+    Description: SES email identity name for the inbox domain.
+    Value: !Ref InboundEmailIdentity
   DkimTokenName1:
     Description: DKIM record name 1 (publish if Route 53 automation disabled).
     Value: !GetAtt InboundEmailIdentity.DkimDNSTokenName1
