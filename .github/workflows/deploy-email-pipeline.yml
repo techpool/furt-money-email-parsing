@@ -12,6 +12,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET || secrets.ARTIFACT_BUCKET || 'furt-money-lambda-artifacts' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
