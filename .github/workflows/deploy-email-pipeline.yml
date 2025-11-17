@@ -46,5 +46,7 @@ jobs:
           RULE_SET_NAME: ${{ vars.RULE_SET_NAME || 'inbox-furt-money-rule-set' }}
           RECIPIENT_DOMAIN: ${{ vars.RECIPIENT_DOMAIN || 'inbox.furt.money' }}
           HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID || '' }}
+          BACKEND_INGEST_URL: ${{ vars.BACKEND_INGEST_URL || secrets.BACKEND_INGEST_URL || 'https://3f1eb99fc3a6.ngrok-free.app' }}
+          BACKEND_INGEST_TOKEN: ${{ secrets.BACKEND_INGEST_TOKEN || 'keP9XXRKUBT1NkMt5hpO4MKKk4pAdRM' }}
           SKIP_LAMBDA_NPM_INSTALL: true
         run: ./scripts/deploy-email-pipeline.sh

@@ -15,6 +15,8 @@ LAMBDA_PACKAGE_PATH=${LAMBDA_PACKAGE_PATH:-$LAMBDA_SOURCE_DIR/build/$LAMBDA_PACK
 ARTIFACT_BUCKET=${ARTIFACT_BUCKET:-furt-money-lambda-artifacts}
 LAMBDA_ARTIFACT_KEY=${LAMBDA_ARTIFACT_KEY:-lambda/process-email/$STACK_NAME-$(date +%Y%m%d%H%M%S).zip}
 SKIP_LAMBDA_NPM_INSTALL=${SKIP_LAMBDA_NPM_INSTALL:-false}
+BACKEND_INGEST_URL=${BACKEND_INGEST_URL:-}
+BACKEND_INGEST_TOKEN=${BACKEND_INGEST_TOKEN:-}
 
 on_error() {
   status=$?
@@ -38,6 +40,16 @@ fi
 
 if [[ -z "$ARTIFACT_BUCKET" ]]; then
   echo "ARTIFACT_BUCKET environment variable must be set to an S3 bucket for Lambda artifacts" >&2
+  exit 1
+fi
+
+if [[ -z "$BACKEND_INGEST_URL" ]]; then
+  echo "BACKEND_INGEST_URL must point to the backend /email-ingest endpoint" >&2
+  exit 1
+fi
+
+if [[ -z "$BACKEND_INGEST_TOKEN" ]]; then
+  echo "BACKEND_INGEST_TOKEN must be set so the Lambda can authenticate with the backend" >&2
   exit 1
 fi
 
@@ -90,6 +102,7 @@ Deploying SES -> S3 -> Lambda pipeline
   Hosted Zone ID  : ${HOSTED_ZONE_ID:-<none>}
   Artifact Bucket : $ARTIFACT_BUCKET
   Artifact Key    : $LAMBDA_ARTIFACT_KEY
+  Ingest URL      : $BACKEND_INGEST_URL
 INFO
 
 set -x
@@ -102,6 +115,8 @@ deploy_args=(
     RecipientDomain="$RECIPIENT_DOMAIN"
     LambdaCodeS3Bucket="$ARTIFACT_BUCKET"
     LambdaCodeS3Key="$LAMBDA_ARTIFACT_KEY"
+    BackendIngestUrl="$BACKEND_INGEST_URL"
+    BackendIngestToken="$BACKEND_INGEST_TOKEN"
 )
 
 if [[ -n "$HOSTED_ZONE_ID" ]]; then
