@@ -36,7 +36,24 @@ type EmailIngestPayload = {
 }
 
 type SesPayload = NonNullable<SESEvent['Records'][number]['ses']>
-type AddressInput = AddressObject | AddressObject[] | EmailAddress | EmailAddress[] | undefined
+type AddressInput =
+  | AddressObject
+  | AddressObject[]
+  | EmailAddress
+  | EmailAddress[]
+  | string
+  | string[]
+  | undefined
+const ORIGINAL_SENDER_HEADERS = [
+  'x-original-from',
+  'x-original-sender',
+  'x-google-original-from',
+  'x-forwarded-for',
+  'original-from',
+  'resent-from',
+  'reply-to',
+]
+const EMAIL_ADDRESS_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
 
 export const handler = async (event: SESEvent): Promise<void> => {
   const record = event.Records?.[0]?.ses
@@ -142,15 +159,16 @@ function isEmailAddress(entry: unknown): entry is EmailAddress {
   return Boolean(entry && typeof (entry as EmailAddress).address === 'string')
 }
 
-function hasAddress(entry: EmailAddress): entry is EmailAddress & { address: string } {
-  return typeof entry.address === 'string' && entry.address.length > 0
-}
-
 function mapAddresses(address?: AddressInput): BackendAddress[] {
-  const collected: EmailAddress[] = []
+  const collected: BackendAddress[] = []
 
-  const collect = (entry?: AddressInput | EmailAddress) => {
+  const collect = (entry?: AddressInput) => {
     if (!entry) {
+      return
+    }
+
+    if (typeof entry === 'string') {
+      collected.push(...parseAddressesFromString(entry))
       return
     }
 
@@ -160,23 +178,34 @@ function mapAddresses(address?: AddressInput): BackendAddress[] {
     }
 
     if (isAddressObject(entry)) {
-      entry.value.forEach((value) => collect(value))
+      collect(entry.value)
       return
     }
 
     if (isEmailAddress(entry)) {
-      collected.push(entry)
+      const normalized = entry.address?.toLowerCase()
+      if (normalized) {
+        collected.push({
+          address: normalized,
+          name: entry.name?.trim() || undefined,
+        })
+      }
     }
   }
 
   collect(address)
-
   return collected
-    .filter(hasAddress)
-    .map((entry) => ({
-      address: entry.address.toLowerCase(),
-      name: entry.name?.trim() || undefined,
-    }))
+}
+
+function parseAddressesFromString(value: string): BackendAddress[] {
+  const matches = value.match(EMAIL_ADDRESS_PATTERN)
+
+  if (!matches) {
+    const trimmed = value.trim()
+    return trimmed.includes('@') ? [{ address: trimmed.toLowerCase() }] : []
+  }
+
+  return matches.map((match) => ({ address: match.toLowerCase() }))
 }
 
 function truncateContent(content?: string | null): string | null {
@@ -211,16 +240,13 @@ function buildIngestPayload(params: {
 
   const to = mapAddresses(parsedMessage.to)
   const cc = mapAddresses(parsedMessage.cc)
-  const from = mapAddresses(parsedMessage.from)[0]
-  const fallbackSource = record.mail.source
-    ? record.mail.source.toLowerCase()
-    : 'unknown@sender'
+  const from = determineSenderAddress(parsedMessage, record)
   const textBody = typeof parsedMessage.text === 'string' ? parsedMessage.text : null
   const htmlBody = typeof parsedMessage.html === 'string' ? parsedMessage.html : null
 
   return {
     messageId: record.mail.messageId,
-    from: from ?? { address: fallbackSource },
+    from,
     to,
     cc: cc.length ? cc : undefined,
     subject: parsedMessage.subject ?? record.mail.commonHeaders?.subject ?? null,
@@ -239,6 +265,47 @@ function buildIngestPayload(params: {
       key: objectKey,
     },
   }
+}
+
+function determineSenderAddress(
+  parsedMessage: Awaited<ReturnType<typeof simpleParser>>,
+  record: SesPayload,
+): BackendAddress {
+  if (parsedMessage.headers) {
+    for (const header of ORIGINAL_SENDER_HEADERS) {
+      const value = parsedMessage.headers.get(header)
+      if (!value) {
+        continue
+      }
+
+      const addresses = mapAddresses(value as AddressInput)
+      if (addresses.length > 0) {
+        return addresses[0]
+      }
+    }
+  }
+
+  const directFrom = mapAddresses(parsedMessage.from)
+  if (directFrom.length > 0) {
+    return directFrom[0]
+  }
+
+  const replyTo = mapAddresses(parsedMessage.replyTo)
+  if (replyTo.length > 0) {
+    return replyTo[0]
+  }
+
+  if (Array.isArray(record.mail.commonHeaders?.from)) {
+    for (const entry of record.mail.commonHeaders!.from!) {
+      const addresses = mapAddresses(entry)
+      if (addresses.length > 0) {
+        return addresses[0]
+      }
+    }
+  }
+
+  const fallbackSource = record.mail.source ? record.mail.source.toLowerCase() : 'unknown@sender'
+  return { address: fallbackSource }
 }
 
 async function sendToBackend(payload: EmailIngestPayload): Promise<void> {
